@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>5×5 Logička Igra</title>
+
+  <style>
+    :root{
+      --cell-size: 150px;
+      --accent: #0066cc;
+      --selected: #ff9800;
+    }
+    *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial}
+    body{display:flex;align-items:flex-start;justify-content:center;padding:24px;background:#f7f8fb;color:#111}
+    .container{max-width:980px;width:100%;text-align:center}
+    .logo{max-height:80px;margin:6px auto 12px;display:block}
+    h1{margin:0 0 8px;font-size:1.4rem}
+    .instructions{margin:0 0 10px;color:#444}
+    .status-bar{display:flex;justify-content:space-between;align-items:center;margin:8px 0 16px}
+    .lives{font-size:1.6rem;}
+    .timer{font-size:1.2rem;font-weight:600;color:#d32f2f}
+    .answer-box{margin-bottom:18px;display:flex;gap:8px;justify-content:center;margin-left: 70px;}
+    .answer-box input{flex:1;max-width:420px;padding:8px 10px;font-size:1rem;border:2px solid #ccc;border-radius:6px}
+    .answer-box button{padding:8px 14px;font-size:1rem;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer}
+    .answer-box button:hover{background:#004f99}
+    .message{height:24px;margin-top:6px;color:var(--accent);font-weight:600}
+    /* Grid */
+    .grid{display:inline-block;max-width:100%;overflow-x:auto}
+    .header-row, .row{display:grid;grid-template-columns:70px repeat(5, 1fr);align-items:center;gap:10px;margin-bottom:10px}
+    .col-header,.row-header{display:flex;align-items:center;justify-content:center;font-weight:600;color:#333}
+    .cell{width:var(--cell-size);height:var(--cell-size);border-radius:10px;border:2px solid #ddd;background:white;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;cursor:pointer;padding:8px;position:relative;overflow:hidden;text-align:center;transition:border-color 0.15s,box-shadow .15s}
+    .cell:hover{transform:translateY(-3px)}
+    .cell-id{font-weight:700;font-size:1rem;margin-top:4px}
+    .cell-text{font-size:0.75rem;margin-top:6px;line-height:1.1;color:#1a1a1a;word-break:break-word}
+    .cell.revealed{border-color:var(--accent);box-shadow:0 6px 14px rgba(0,0,0,0.06)}
+    .cell.selected{border-color:var(--selected);box-shadow:0 0 0 4px rgba(255,152,0,0.55)}
+    /* popup */
+    .popup{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000}
+    .popup.hidden{display:none}
+    .popup-content{background:#fff;padding:26px 30px;border-radius:12px;text-align:center;box-shadow:0 8px 20px rgba(0,0,0,0.3);max-width:90%}
+    .popup-content h2{margin:12px 0;font-size:1.4rem;color:#d32f2f}
+    .popup-content button{padding:8px 16px;font-size:1rem;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer}
+    .popup-logo{max-width:120px;margin:6px auto;display:block}
+
+    @media (max-width:760px){
+      :root{--cell-size:110px}
+      .header-row{grid-template-columns:50px repeat(5, 1fr)}
+      .row{grid-template-columns:50px repeat(5, 1fr)}
+      .cell-id{font-size:0.9rem}
+      .cell-text{font-size:0.65rem}
+      .answer-box input{max-width:220px}
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <img src="logo.png" alt="Logo igre" class="logo" />
+    <h1>5×5 Stefanova Logička Igra</h1>
+    <p class="instructions">Imaš 30 minuta i 3 života.</p>
+
+    <div class="status-bar">
+      <div id="lives" class="lives">
+        <span class="heart">❤️</span>
+        <span class="heart">❤️</span>
+        <span class="heart">❤️</span>
+      </div>
+      <div id="timer" class="timer">30:00</div>
+    </div>
+
+    <div class="answer-box">
+      <input id="answerInput" type="text" placeholder="Unesi odgovor ovde" autofocus />
+      <button id="submitBtn">Pošalji</button>
+    </div>
+
+    <div id="grid" class="grid" aria-label="5x5 puzzle grid"></div>
+
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+  </main>
+
+  <div id="popup" class="popup hidden">
+    <div class="popup-content">
+      <img src="logo.png" alt="Logo" class="popup-logo" />
+      <h2 id="popup-msg">IZGUBIO SI :(</h2>
+      <button onclick="location.reload()">Ponovo</button>
+    </div>
+  </div>
+
+<script>
+// ------------------ KONFIGURACIJA IGRE ------------------
+const rows = ['A','B','C','D','E'];
+const cols = ['1','2','3','4','5'];
+
+const cells = {
+  'A1': { display: 'Živan', accepted: ['Živan','Zivan'], text: 'Delim dijagonalu sa decom i ženom, ostala tri ugla nisu više sa nama, svi znamo ko je C4' },
+  'E5': { display: 'Slobo', accepted: ['Slobo','Slobodan','Mara'], text: 'Živana okružuju samo muškarci, David je u A redu' },
+  'B2': { display: 'Dragan', accepted: ['Dragan'], text: 'Niko u ovom redu nije bio živ kad je Đokovic uzeo prvi slem, Stefan je na D5' },
+  'D5': { display: 'Stefan', accepted: ['Stefan'], text: 'Jedina osoba koja lagano pojede 2kg kobasica je na A5, nema žena u prvoj koloni' },
+  'A5': { display: 'Džons', accepted: ['Džons','Dzons','Djoni','Đoni','Slavo','Slavoljub'], text: 'Milisav je izmedju babe i unuka, moj otac je na najudaljenijem polju od mene' },
+  'E1': { display: 'Živko', accepted: ['Živko','Zivko'], text: 'Sve moje snaje su u D redu, moja braća su u istoj koloni' },
+  'D4': { display: 'Vera', accepted: ['Vera'], text: '3. kolonu sačinjavaju samo žene, Rada i Joakim dele dijagonalu' },
+  'C3': { display: 'Dragana', accepted: ['Dragana'], text: 'Ispod Živana je Aleksej, a ispod Džonsa Joakim ili Jakov' },
+  'B1': { display: 'Aleksej', accepted: ['Aleksej'], text: 'Moja baba se nalazi pored mog dede, Živan je najstariji u A redu' },
+  'D2': { display: 'Nataša', accepted: ['Nataša','Natasa'], text: 'Dejan je u istoj koloni kao i Jakov' },
+  'D3': { display: 'Tanja', accepted: ['Tanja'], text: 'U petoj koloni svi imaju isto početno slovo njihovih imena i prezimena' },
+  'B5': { display: 'Joakim', accepted: ['Joakim'], text: 'No. 1 Rodic hejter je u istom redu kao i njegov mladji sin' },
+  'C1': { display: 'Žarko', accepted: ['Žarko','Zarko'], text: 'Delim dijagonalu sa mojom majkom, a otac mi je u 4. koloni' },
+  'E4': { display: 'Milisav', accepted: ['Milisav'], text: 'No. 1 Šaban fan je u A redu' },
+  'A3': { display: 'Ruža', accepted: ['Ruža','Ruza','Ružica','Ruzica'], text: 'Jakov nije pored brata' },
+  'A2': { display: 'Dejan', accepted: ['Dejan'], text: 'Dragutin Verin otac nije u četvrtoj koloni' },
+  'A4': { display: 'David', accepted: ['David'], text: 'I ja i lik koji je napravio ovo delimo dijagonalu sa Ninom' },
+  'B3': { display: 'Nina', accepted: ['Nina'], text: 'Majka nije pored mene, ja volim čokoladu' },
+  'E2': { display: 'Rada', accepted: ['Rada','Radojka'], text: 'Nina voli čokoladu' },
+  'C2': { display: 'Jakov', accepted: ['Jakov'], text: 'Ja jednini iz C reda nisam video Đokovićev prvi slem :(' },
+  'C5': { display: 'Bobo', accepted: ['Bobo','Slobodan'], text: 'Dejan je u A redu' },
+  'C4': { display: 'Bobo', accepted: ['Bobo','Slobodan'], text: 'Jbg bilo mi tesno' },
+  'D1': { display: 'Dragutin', accepted: ['Dragutin'], text: 'Svi znamo ko je C4' },
+  'B4': { display: 'Radisav', accepted: ['Radisav'], text: 'Svi znamo ko je C4' },
+  'E3': { display: 'Mara', accepted: ['Mara'], text: 'Dva moja unuka sa istim imenom dele kolonu' },
+};
+
+const revealed = new Set(['A1']);
+let selectedCell = null;
+let lives = 3;
+let timeRemaining = 30 * 60;
+let timerInterval;
+
+const grid = document.getElementById('grid');
+const inputEl = document.getElementById('answerInput');
+const popup = document.getElementById('popup');
+inputEl.focus();
+
+// ------------------ POMOĆNE FUNKCIJE ------------------
+function normalize(s){
+  if(!s) return '';
+  let t = s.trim().toLowerCase();
+  t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return t;
+}
+
+function makeCell(id){
+  const btn = document.createElement('button');
+  btn.className = 'cell';
+  btn.dataset.cell = id;
+  btn.id = id;
+  renderCell(btn);
+  btn.addEventListener('click', ()=>onCellClick(id));
+  return btn;
+}
+
+function renderCell(btn){
+  const id = btn.dataset.cell;
+  if(revealed.has(id)){
+    btn.classList.add('revealed');
+    btn.innerHTML = '';
+    const label = document.createElement('div'); label.className='cell-id';
+    const def = cells[id];
+    label.textContent = def ? def.display : id;
+    const span = document.createElement('span'); span.className='cell-text';
+    span.textContent = def ? def.text : '';
+    btn.appendChild(label); btn.appendChild(span);
+  } else {
+    btn.classList.remove('revealed');
+    btn.innerHTML = '<div class="cell-id">'+id+'</div>';
+  }
+}
+
+function buildGrid(){
+  const headerRow = document.createElement('div'); headerRow.className='header-row';
+  headerRow.appendChild(document.createElement('div'));
+  cols.forEach(c=>{
+    const h = document.createElement('div'); h.className='col-header'; h.textContent=c; headerRow.appendChild(h);
+  });
+  grid.appendChild(headerRow);
+
+  rows.forEach(r=>{
+    const rowEl = document.createElement('div'); rowEl.className='row';
+    const rowLabel = document.createElement('div'); rowLabel.className='row-header'; rowLabel.textContent = r;
+    rowEl.appendChild(rowLabel);
+    cols.forEach(c=>{
+      const id = r + c;
+      const cell = makeCell(id);
+      rowEl.appendChild(cell);
+    });
+    grid.appendChild(rowEl);
+  });
+}
+
+function onCellClick(id){
+  if(revealed.has(id)){
+    showMessage('Polje ' + id + ' je već otključano.');
+    selectedCell = null;
+    clearSelectionStyles();
+    return;
+  }
+  selectedCell = id;
+  clearSelectionStyles();
+  document.getElementById(id).classList.add('selected');
+  showMessage('Izabrano polje ' + id + '. Unesi ime i pritisni Pošalji ili Enter.');
+  inputEl.focus();
+}
+
+function tryAnswer(){
+  if(!selectedCell){
+    showMessage('Klikni prvo na zaključano polje.');
+    inputEl.focus();
+    checkWin();
+    return;
+  }
+  const raw = inputEl.value;
+  const ans = normalize(raw);
+  if(!ans){
+    showMessage('Molim te unesi odgovor.');
+    inputEl.focus();
+    return;
+  }
+
+  const id = selectedCell;
+  const def = cells[id];
+
+  if(def){
+    const ok = def.accepted.some(a => normalize(a) === ans);
+    if(ok){
+      revealed.add(id);
+      renderCell(document.getElementById(id));
+      document.getElementById(id).classList.remove('selected');
+      showMessage('Tačno — ' + id + ' je otključano.');
+      inputEl.value = '';
+      selectedCell = null;
+      checkWin(); // ✅ proverava da li su sva polja otključana
+      inputEl.focus();
+      return;
+    } else {
+      loseLife();
+      showMessage('Netačan odgovor za ' + id + '. Izgubio si život.');
+      inputEl.value = '';
+      inputEl.focus();
+      return;
+    }
+  } else {
+    loseLife();
+    showMessage('To polje nema rešenje. Izgubio si život.');
+    inputEl.value = '';
+    inputEl.focus();
+    return;
+  }
+}
+
+function loseLife(){
+  if(lives > 0){
+    const hearts = document.querySelectorAll('#lives .heart');
+    hearts[lives - 1].style.visibility = 'hidden';
+    lives--;
+    if(lives === 0){
+      endGame('IZGUBIO SI :( A znaš ko je na C4');
+    }
+  }
+}
+
+// ✅ nova funkcija – pobeda
+function checkWin(){
+  const totalCells = rows.length * cols.length;
+  if (revealed.size === totalCells) {
+    endGame('Alal ti D4');
+    showConfetti();
+  }
+}
+
+function startTimer(){
+  updateTimerDisplay();
+  timerInterval = setInterval(()=>{
+    timeRemaining--;
+    updateTimerDisplay();
+    if(timeRemaining <= 0){
+      clearInterval(timerInterval);
+      endGame('Vreme je isteklo! IZGUBIO SI :(');
+    }
+  },1000);
+}
+
+function updateTimerDisplay(){
+  const minutes = Math.floor(timeRemaining / 60);
+  const seconds = timeRemaining % 60;
+  document.getElementById('timer').textContent = `${minutes}:${seconds.toString().padStart(2,'0')}`;
+}
+
+function clearSelectionStyles(){
+  document.querySelectorAll('.cell.selected').forEach(el=>el.classList.remove('selected'));
+}
+
+function showMessage(text){
+  const msg = document.getElementById('message');
+  msg.textContent = text;
+}
+
+function endGame(msg){
+  clearInterval(timerInterval);
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('answerInput').disabled = true;
+  clearSelectionStyles();
+  document.getElementById('popup-msg').textContent = msg;
+
+  // menja dugme za X
+  const content = document.querySelector('.popup-content');
+  content.innerHTML = `
+    <button id="closePopup" style="position:absolute;top:10px;right:14px;font-size:1.3rem;background:none;border:none;cursor:pointer;">✖</button>
+    <img src="logo.png" alt="Logo" class="popup-logo" />
+    <h2>${msg}</h2>
+  `;
+  popup.classList.remove('hidden');
+
+  document.getElementById('closePopup').addEventListener('click', ()=>{
+    popup.classList.add('hidden');
+  });
+}
+
+// 🎉 jednostavna animacija konfeta
+function showConfetti(){
+  for(let i=0;i<150;i++){
+    const c = document.createElement('div');
+    c.style.position = 'fixed';
+    c.style.top = '-10px';
+    c.style.left = Math.random()*100+'vw';
+    c.style.width = '10px';
+    c.style.height = '10px';
+    c.style.borderRadius = '50%';
+    c.style.background = `hsl(${Math.random()*360},100%,50%)`;
+    c.style.opacity = '0.9';
+    c.style.zIndex = '2000';
+    document.body.appendChild(c);
+    const fall = c.animate([
+      { transform:`translateY(0px) rotate(0deg)` },
+      { transform:`translateY(${window.innerHeight+20}px) rotate(${360*Math.random()}deg)` }
+    ], {
+      duration: 3000 + Math.random()*2000,
+      easing: 'ease-in',
+      iterations: 1,
+    });
+    fall.onfinish = ()=>c.remove();
+  }
+}
+
+// ------------------ INICIJALIZACIJA ------------------
+document.getElementById('submitBtn').addEventListener('click', tryAnswer);
+inputEl.addEventListener('keydown', e=>{
+  if(e.key === 'Enter') tryAnswer();
+});
+
+buildGrid();
+revealed.forEach(id=>{
+  const btn = document.getElementById(id);
+  if(btn) renderCell(btn);
+});
+startTimer();
+</script>
+
+
+</body>
+</html>

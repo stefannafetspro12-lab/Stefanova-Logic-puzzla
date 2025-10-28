@@ -1,1 +1,0 @@
-# Stefanova-Logic-puzzla
